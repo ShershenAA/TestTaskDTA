@@ -19,6 +19,8 @@ builder.Services.AddHealthChecks();
 
 var app = builder.Build();
 
+await DbInitializer.InitializeAsync(app.Services, app.Logger);
+
 app.UseSwagger();
 app.UseSwaggerUI();
 app.MapGet("/", () => Results.Redirect("/swagger"));
