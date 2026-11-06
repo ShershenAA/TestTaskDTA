@@ -3,6 +3,7 @@ using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using Microsoft.EntityFrameworkCore;
+using Npgsql;
 using Practitioners.Api.Data;
 using Practitioners.Api.Domain;
 using Practitioners.Api.Dtos;
@@ -10,11 +11,70 @@ using Practitioners.Api.Infrastructure;
 
 namespace Practitioners.Api.Services;
 
+public enum UpdateStatus { Ok, NotFound, Conflict }
+
 public class PractitionerService(AppDbContext db, ICacheService cache)
 {
     private static readonly TimeSpan CacheTtl = TimeSpan.FromMinutes(5);
 
     private static string ItemKey(Guid id) => $"prac:item:{id}";
+
+    private static bool IsUniqueViolation(DbUpdateException ex) =>
+        ex.InnerException is PostgresException { SqlState: PostgresErrorCodes.UniqueViolation };
+
+    #region CREATE
+
+    /// <summary>Создание. Если передан idempotencyKey, повторный вызов вернёт ту же запись, а не создаст дубль.</summary>
+    public async Task<(PractitionerDto Dto, bool Created)> CreateAsync(
+        PractitionerRequest r, string? idempotencyKey, CancellationToken ct)
+    {
+        if (idempotencyKey is not null)
+        {
+            var existing = await FindByIdempotencyKeyAsync(idempotencyKey, ct);
+            if (existing is not null) return (existing, false);
+        }
+
+        var now = DateTime.UtcNow;
+        var entity = new Practitioner { Id = Guid.NewGuid(), Created = now, Updated = now, Version = 1 };
+        Apply(entity, r);
+        db.Practitioners.Add(entity);
+
+        if (idempotencyKey is not null)
+            db.IdempotencyKeys.Add(new IdempotencyKey { Key = idempotencyKey, PractitionerId = entity.Id, Created = now });
+
+        try
+        {
+            // запись и ключ идемпотентности сохраняются атомарно
+            await db.SaveChangesAsync(ct);
+        }
+        catch (DbUpdateException ex) when (idempotencyKey is not null && IsUniqueViolation(ex))
+        {
+            // параллельный запрос с тем же ключом успел раньше
+            db.ChangeTracker.Clear();
+            var existing = await FindByIdempotencyKeyAsync(idempotencyKey, ct);
+            if (existing is not null) return (existing, false);
+            throw;
+        }
+
+        await cache.BumpListVersionAsync();
+        return (ToDto(entity), true);
+    }
+
+    private async Task<PractitionerDto?> FindByIdempotencyKeyAsync(string key, CancellationToken ct)
+    {
+        var practitionerId = await db.IdempotencyKeys.AsNoTracking()
+            .Where(k => k.Key == key)
+            .Select(k => (Guid?)k.PractitionerId)
+            .FirstOrDefaultAsync(ct);
+
+        if (practitionerId is null) return null;
+
+        var e = await db.Practitioners.IgnoreQueryFilters().AsNoTracking()
+            .FirstOrDefaultAsync(x => x.Id == practitionerId, ct);
+        return e is null ? null : ToDto(e);
+    }
+
+    #endregion
 
     #region GET
 
@@ -38,8 +98,6 @@ public class PractitionerService(AppDbContext db, ICacheService cache)
     #endregion
 
     #region SEARCH
-
-    // ----------------------------------------------------------------
 
     public async Task<SearchResult> SearchAsync(PractitionerSearch s, CancellationToken ct)
     {
@@ -117,11 +175,79 @@ public class PractitionerService(AppDbContext db, ICacheService cache)
 
     #endregion
 
+    #region UPDATE
+
+    /// <summary>Полная замена данных врача. expectedVersion (из If-Match) включает проверку оптимистичной блокировки.</summary>
+    public async Task<(UpdateStatus Status, PractitionerDto? Dto)> UpdateAsync(
+        Guid id, PractitionerRequest r, int? expectedVersion, CancellationToken ct)
+    {
+        var e = await db.Practitioners.FirstOrDefaultAsync(x => x.Id == id, ct);
+        if (e is null) return (UpdateStatus.NotFound, null);
+
+        if (expectedVersion is { } v && v != e.Version)
+            return (UpdateStatus.Conflict, ToDto(e));
+
+        Apply(e, r);
+        e.Version++;
+        e.Updated = DateTime.UtcNow;
+
+        try
+        {
+            await db.SaveChangesAsync(ct);
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            // между чтением и записью запись изменил кто-то другой
+            return (UpdateStatus.Conflict, null);
+        }
+
+        await cache.RemoveAsync(ItemKey(id));
+        await cache.BumpListVersionAsync();
+        return (UpdateStatus.Ok, ToDto(e));
+    }
+
+    #endregion
+
+    #region DELETE
+
+    /// <summary>Идемпотентное soft-удаление: повторный вызов не меняет состояние.</summary>
+    public async Task DeleteAsync(Guid id, CancellationToken ct)
+    {
+        var now = DateTime.UtcNow;
+        var affected = await db.Practitioners
+            .Where(x => x.Id == id) // query filter уже исключает удалённых
+            .ExecuteUpdateAsync(s => s
+                .SetProperty(x => x.IsDeleted, true)
+                .SetProperty(x => x.Version, x => x.Version + 1)
+                .SetProperty(x => x.Updated, now), ct);
+
+        if (affected > 0)
+        {
+            await cache.RemoveAsync(ItemKey(id));
+            await cache.BumpListVersionAsync();
+        }
+    }
+
+    #endregion
+
     #region helpers
 
     public static PractitionerDto ToDto(Practitioner e) => new(
         e.Id, e.FirstName, e.LastName, e.Phone, e.Speciality, e.PlaceOfWork, e.Email,
         e.IsActive, e.Created, e.Updated, e.Version);
+
+    private static void Apply(Practitioner e, PractitionerRequest r)
+    {
+        e.FirstName = r.FirstName.Trim();
+        e.LastName = r.LastName.Trim();
+        e.Phone = Clean(r.Phone);
+        e.Speciality = Clean(r.Speciality);
+        e.PlaceOfWork = Clean(r.PlaceOfWork);
+        e.Email = Clean(r.Email);
+        e.IsActive = r.IsActive;
+    }
+
+    private static string? Clean(string? s) => string.IsNullOrWhiteSpace(s) ? null : s.Trim();
 
     /// <summary>Экранирует спецсимволы LIKE (\ % _).</summary>
     private static string Escape(string s) =>
