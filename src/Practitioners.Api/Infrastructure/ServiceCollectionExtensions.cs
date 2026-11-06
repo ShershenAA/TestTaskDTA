@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Practitioners.Api.Data;
+using Practitioners.Api.Messaging;
 using Practitioners.Api.Services;
 using StackExchange.Redis;
 
@@ -7,7 +8,7 @@ namespace Practitioners.Api.Infrastructure;
 
 public static class ServiceCollectionExtensions
 {
-    /// <summary>Общая инфраструктура для API: БД, Redis, кэш, сервисы.</summary>
+    /// <summary>Общая инфраструктура для API и для consumer'а: БД, Redis, кэш, сервисы.</summary>
     public static IServiceCollection AddInfrastructure(this IServiceCollection services, IConfiguration cfg)
     {
         services.AddDbContext<AppDbContext>(o => o.UseNpgsql(cfg.GetConnectionString("Postgres")));
@@ -20,6 +21,7 @@ public static class ServiceCollectionExtensions
         });
 
         services.AddSingleton<ICacheService, RedisCacheService>();
+        services.AddSingleton<ImportPublisher>();
         services.AddScoped<PractitionerService>();
         return services;
     }

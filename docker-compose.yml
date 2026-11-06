@@ -17,6 +17,7 @@ services:
 
   redis:
     image: redis:7-alpine
+    command: ["redis-server", "--appendonly", "yes"]
     volumes:
       - redisdata:/data
     ports:
@@ -26,6 +27,39 @@ services:
       interval: 5s
       timeout: 3s
       retries: 10
+
+  # REST API + FHIR + Swagger + producer. При первом запуске создаёт схему и наполняет БД тестовыми данными.
+  api:
+    build: .
+    image: practitioners-api:latest
+    environment:
+      AppMode: api
+      ConnectionStrings__Postgres: "Host=postgres;Port=5432;Database=practitioners;Username=postgres;Password=postgres"
+      ConnectionStrings__Redis: "redis:6379"
+    ports:
+      - "8080:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  # Consumer событий импорта (тот же образ, другой режим запуска).
+  consumer:
+    image: practitioners-api:latest
+    environment:
+      AppMode: consumer
+      Consumer__Name: consumer-1
+      ConnectionStrings__Postgres: "Host=postgres;Port=5432;Database=practitioners;Username=postgres;Password=postgres"
+      ConnectionStrings__Redis: "redis:6379"
+    depends_on:
+      api:
+        condition: service_started
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
 
 volumes:
   pgdata:
