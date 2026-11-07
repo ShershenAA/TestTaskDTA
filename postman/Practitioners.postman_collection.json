@@ -1,0 +1,368 @@
+{
+  "info": {
+    "name": "Practitioner Directory",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:8080"
+    },
+    {
+      "key": "practitionerId",
+      "value": ""
+    }
+  ],
+  "item": [
+    {
+      "name": "REST CRUD",
+      "item": [
+        {
+          "name": "Create practitioner",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/practitioners",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "practitioners"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"firstName\": \"Пётр\",\n  \"lastName\": \"Иванов\",\n  \"phone\": \"+375(17) 123-45-67\",\n  \"speciality\": \"Терапевт\",\n  \"placeOfWork\": \"Городская поликлиника №1\",\n  \"email\": \"p.ivanov@clinic.example\",\n  \"isActive\": true\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "pm.collectionVariables.set('practitionerId', j.id);",
+                  "pm.test('201 Created', () => pm.response.to.have.status(201));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get by id",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/practitioners/{{practitionerId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "practitioners",
+                "{{practitionerId}}"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Search (filters + paging)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/practitioners?speciality=терапевт&isActive=true&sort=lastName&page=1&pageSize=10",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "practitioners"
+              ],
+              "query": [
+                {
+                  "key": "speciality",
+                  "value": "терапевт"
+                },
+                {
+                  "key": "isActive",
+                  "value": "true"
+                },
+                {
+                  "key": "sort",
+                  "value": "lastName"
+                },
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "pageSize",
+                  "value": "10"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Full-text search by name (q)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/practitioners?q=иван пет",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "practitioners"
+              ],
+              "query": [
+                {
+                  "key": "q",
+                  "value": "иван пет"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Update practitioner (If-Match optional)",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "If-Match",
+                "value": "W/\"1\""
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/practitioners/{{practitionerId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "practitioners",
+                "{{practitionerId}}"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"firstName\": \"Пётр\",\n  \"lastName\": \"Иванов\",\n  \"phone\": \"+375(17) 000-00-00\",\n  \"speciality\": \"Кардиолог\",\n  \"placeOfWork\": \"Городская поликлиника №1\",\n  \"email\": \"p.ivanov@clinic.example\",\n  \"isActive\": true\n}"
+            }
+          }
+        },
+        {
+          "name": "Delete practitioner",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/practitioners/{{practitionerId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "practitioners",
+                "{{practitionerId}}"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "FHIR",
+      "item": [
+        {
+          "name": "FHIR read",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/fhir+json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/fhir/Practitioner/{{practitionerId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "fhir",
+                "Practitioner",
+                "{{practitionerId}}"
+              ]
+            }
+          }
+        },
+        {
+          "name": "FHIR search by name",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/fhir+json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/fhir/Practitioner?name=иван&_count=5&_sort=family",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "fhir",
+                "Practitioner"
+              ],
+              "query": [
+                {
+                  "key": "name",
+                  "value": "иван"
+                },
+                {
+                  "key": "_count",
+                  "value": "5"
+                },
+                {
+                  "key": "_sort",
+                  "value": "family"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "FHIR search family + active",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/fhir+json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/fhir/Practitioner?family=Петров&active=true",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "fhir",
+                "Practitioner"
+              ],
+              "query": [
+                {
+                  "key": "family",
+                  "value": "Петров"
+                },
+                {
+                  "key": "active",
+                  "value": "true"
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Async import (broker)",
+      "item": [
+        {
+          "name": "Publish import events",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/import/practitioners",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "import",
+                "practitioners"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "[\n  {\n    \"eventId\": \"evt-001\",\n    \"type\": \"upsert\",\n    \"occurredAt\": \"2026-11-04T10:00:00Z\",\n    \"payload\": {\n      \"id\": \"11111111-1111-1111-1111-111111111111\",\n      \"firstName\": \"Леонид\",\n      \"lastName\": \"Тестов\",\n      \"speciality\": \"Хирург\",\n      \"placeOfWork\": \"Импортированная клиника\",\n      \"email\": \"l.testov@clinic.example\",\n      \"isActive\": true\n    }\n  },\n  {\n    \"eventId\": \"evt-002\",\n    \"type\": \"upsert\",\n    \"payload\": {\n      \"firstName\": \"Вера\",\n      \"lastName\": \"Импортова\",\n      \"speciality\": \"Невролог\",\n      \"isActive\": true\n    }\n  }\n]"
+            }
+          }
+        },
+        {
+          "name": "Read imported practitioner",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/practitioners/11111111-1111-1111-1111-111111111111",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "practitioners",
+                "11111111-1111-1111-1111-111111111111"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Publish delete event",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/import/practitioners",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "import",
+                "practitioners"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "[\n  {\n    \"eventId\": \"evt-003\",\n    \"type\": \"delete\",\n    \"payload\": {\n      \"id\": \"11111111-1111-1111-1111-111111111111\"\n    }\n  }\n]"
+            }
+          }
+        }
+      ]
+    }
+  ]
+}
